@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fábrica 3D</title>
+<style>
+:root{--bg:#f4f1ea;--fg:#222;--card:#fff;--bd:#d6d0c2;--ac:#c2570c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1c1f;--fg:#eee;--card:#2a2c31;--bd:#40434a;--ac:#f08a3c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1b1c1f;--fg:#eee;--card:#2a2c31;--bd:#40434a;--ac:#f08a3c;color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px}
+h1{font-size:20px;margin:0}
+#hud{display:flex;gap:16px;font-weight:600}
+#v{width:100%;max-width:900px;border:2px solid var(--bd);border-radius:8px;overflow:hidden;line-height:0}
+#v canvas{width:100%;touch-action:none}
+#bar{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:900px}
+#pad{display:flex;gap:6px}#pad button{touch-action:none;user-select:none;width:52px;padding:12px 0}
+button:disabled{opacity:.45;cursor:default}
+button{background:var(--card);color:var(--fg);border:2px solid var(--bd);border-radius:8px;padding:8px 10px;font-size:14px;cursor:pointer}
+button.on{border-color:var(--ac);background:var(--ac);color:#fff}
+p{max-width:900px;font-size:13px;margin:0;opacity:.8;text-align:center}
+</style>
+</head>
+<body>
+<h1>⚙️ Fábrica 3D</h1>
+<div id="hud"><span>💰 <b id="m">0</b></span><span>Vendido: <b id="s">0</b></span></div>
+<div id="st" style="min-height:20px;font-size:14px;color:var(--ac);font-weight:600">Escolha uma ferramenta e clique no mapa.</div>
+<div id="v"></div>
+<div id="bar"></div><div id="pad"></div><p>Fluxo: minério → Fundição (vira barra) → Montadora (1 barra de cobre + 1 barra de ferro = 1 chapa de metal, vale 30) → Vendedor.</p>
+<p>Ande com WASD ou setas (ou os botões ▲◀▼▶). Escolha um item na barra (teclas 1 a 7) e clique perto de você para construir (alcance de 7 blocos). R gira a peça, Q/E giram a câmera, botão direito apaga. Os espaços 🔒 são para itens futuros.</p>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+if(!window.THREE){document.getElementById('st').textContent='Não foi possível carregar o motor 3D.'}else{
+const W=20,H=13,D=[[1,0],[0,1],[-1,0],[0,-1]];
+const B={conv:{n:'Esteira',c:1,k:'1'},minerc:{n:'Min. cobre',c:10,k:'2'},minerf:{n:'Min. ferro',c:15,k:'3'},smelt:{n:'Fundição',c:25,k:'4'},asm:{n:'Montadora',c:40,k:'5'},core:{n:'Vendedor',c:5,k:'6'},erase:{n:'Apagar',c:0,k:'7'}};
+const say=t=>document.getElementById('st').textContent=t;
+const box=(w,h,d,c,x,y,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color:c,roughness:.7}));m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;return m};
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x23272b);
+const cam=new THREE.PerspectiveCamera(45,1.6,.1,100);
+const ren=new THREE.WebGLRenderer({antialias:true});ren.shadowMap.enabled=true;
+const V=document.getElementById('v');V.appendChild(ren.domElement);
+function fit(){const w=V.clientWidth;ren.setSize(w,Math.round(w*.62));cam.aspect=1/.62;cam.updateProjectionMatrix()}
+new ResizeObserver(fit).observe(V);fit();
+scene.add(new THREE.AmbientLight(0xffffff,.6));
+const sun=new THREE.DirectionalLight(0xffffff,.8);sun.position.set(8,18,6);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);
+Object.assign(sun.shadow.camera,{left:-16,right:16,top:16,bottom:-16});scene.add(sun);
+let g=[...Array(H)].map(()=>Array(W).fill(null)),ore=[...Array(H)].map(()=>Array(W).fill(false));
+for(let p=0;p<6;p++){const cx=2+Math.floor(Math.random()*(W-8)),cy=1+Math.floor(Math.random()*(H-2));
+ for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++)if(i*i+j*j<=4+Math.random()*2&&cx+i>=0&&cx+i<W&&cy+j>=0&&cy+j<H)ore[cy+j][cx+i]=p%2?'fe':'cu'}
+ore[6][W-3]=false;
+for(let j=0;j<H;j++)for(let i=0;i<W;i++){const o=ore[j][i];const t=box(1,.1,1,o?(o=='fe'?0x5d6b78:0x8a6a45):((i+j)%2?0x4c5155:0x464a4e),i+.5,-.05,j+.5);t.castShadow=false;scene.add(t);
+ if(o)for(let k=0;k<3;k++){const r=box(.18+Math.random()*.15,.15,.18+Math.random()*.15,(o=='fe'?0x9aa9b6:0xa98258),i+.2+Math.random()*.6,.08,j+.2+Math.random()*.6);r.rotation.y=Math.random()*3;scene.add(r)}}
+const mt=(c,m)=>new THREE.MeshStandardMaterial({color:c,metalness:m||0,roughness:m?.35:.8});
+const IT={cu:[mt(0xc9a26b),[1,1,1],1],fe:[mt(0x9aa7b3),[1,1,1],1],cub:[mt(0xd2793a,.6),[.55,.5,1.7],5],feb:[mt(0xc9d0d6,.6),[.55,.5,1.7],5],sheet:[mt(0x9ec3e6,.7),[1.9,.22,1.9],30]};
+function make(b){const q=new THREE.Group();q.position.set(b.x+.5,0,b.y+.5);q.rotation.y=-b.d*Math.PI/2;
+ if(b.t=='conv'){q.add(box(.96,.12,.96,0x2a2d32,0,.06,0),box(.96,.08,.1,0x555b64,0,.14,.43),box(.96,.08,.1,0x555b64,0,.14,-.43));
+  b.st=[0,1,2].map(()=>{const s=box(.08,.03,.6,0x7b828c,0,.13,0);q.add(s);return s});
+  b.im=box(.34,.3,.34,0xc9a26b,0,.3,0);b.im.visible=false;q.add(b.im)}
+ else if(b.t.startsWith('miner')){q.add(box(.8,.5,.8,b.t=='minerc'?0xb5651d:0x4a6fa5,0,.25,0),box(.3,.2,.3,0xf2c14e,.5,.3,0));
+  b.dr=new THREE.Group();b.dr.position.set(0,.62,0);const c=new THREE.Mesh(new THREE.ConeGeometry(.22,.4,8),new THREE.MeshStandardMaterial({color:0xd9dde0}));c.rotation.x=Math.PI;c.castShadow=true;b.dr.add(c,box(.5,.06,.1,0x555555,0,.22,0));q.add(b.dr)}
+ else if(b.t=='smelt'){q.add(box(.84,.6,.84,0x7a4426,0,.3,0),box(.3,.2,.3,0xf2c14e,.5,.3,0));
+  const ch=new THREE.Mesh(new THREE.CylinderGeometry(.1,.13,.5,10),new THREE.MeshStandardMaterial({color:0x4a4f57}));ch.position.set(-.2,.85,-.2);ch.castShadow=true;q.add(ch);
+  b.gl=box(.5,.04,.5,0x3a2a20,0,.62,0);q.add(b.gl)}
+ else if(b.t=='asm'){q.add(box(.9,.55,.9,0x4b5d73,0,.275,0),box(.3,.2,.3,0xf2c14e,.5,.3,0));b.pr=box(.34,.3,.34,0xaab4c0,0,.75,0);q.add(b.pr);b.l1=box(.12,.08,.12,0x333333,-.25,.6,.25);b.l2=box(.12,.08,.12,0x333333,-.25,.6,-.25);q.add(b.l1,b.l2)}
+ else{q.add(box(.9,.4,.9,0x2f9e44,0,.2,0));b.coin=new THREE.Mesh(new THREE.CylinderGeometry(.25,.25,.08,20),new THREE.MeshStandardMaterial({color:0xf2c14e,metalness:.6,roughness:.3}));b.coin.position.y=.55;b.coin.castShadow=true;q.add(b.coin)}
+ b.m=q;return q}
+let list=[];
+function add(t,i,j,d){const b={t,x:i,y:j,d,c:0,item:null,buf:0,out:null,p:0,q:[],cu:0,fe:0};g[j][i]=b;list.push(b);scene.add(make(b));return b}
+let money=40,sold=0,tool='conv',dir=0;
+add('core',W-3,6,0);
+const pg=new THREE.Group();pg.add(box(.4,.5,.3,0xe8710a,0,.45,0),box(.34,.34,.34,0xf1c9a0,0,.87,0),box(.4,.1,.4,0xf2c14e,0,1.07,0),box(.14,.25,.14,0x2b3a55,-.1,.12,0),box(.14,.25,.14,0x2b3a55,.1,.12,0),box(.1,.1,.1,0x222222,0,.88,.18));scene.add(pg);
+const bar=document.getElementById('bar');
+for(const k in B){const b=document.createElement('button');b.id='b'+k;b.textContent=`${B[k].k}. ${B[k].n}${B[k].c?' ($'+B[k].c+')':''}`;b.onclick=()=>sel(k);bar.appendChild(b)}
+for(let n=1;n<=2;n++){const b=document.createElement('button');b.textContent='🔒 Em breve';b.disabled=true;bar.appendChild(b)}
+let az=0,dist=17,px=9.5,pz=8.5,fx=9.5,fz=8.5;const keys={};
+[['↻ Girar peça',()=>dir=(dir+1)%4],['⟲ Câmera',()=>az-=.4],['⟳ Câmera',()=>az+=.4],['＋',()=>dist=Math.max(8,dist-2)],['－',()=>dist=Math.min(30,dist+2)]].forEach(([n,f])=>{const b=document.createElement('button');b.textContent=n;b.onclick=f;bar.appendChild(b)});
+function sel(k){tool=k;for(const q in B)document.getElementById('b'+q).classList.toggle('on',q==k)}sel('conv');
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys[k]=true;if(k.startsWith('arrow'))e.preventDefault();if(k=='r')dir=(dir+1)%4;if(k=='q')az-=.4;if(k=='e')az+=.4;for(const q in B)if(B[q].k==e.key)sel(q)});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+[['▲','w'],['◀','a'],['▼','s'],['▶','d']].forEach(([n,k])=>{const b=document.createElement('button');b.textContent=n;b.onpointerdown=e=>{e.preventDefault();keys[k]=true};['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false));document.getElementById('pad').appendChild(b)});
+function acc(t,it,from){if(!t)return false;if(t.t=='conv')return !t.item&&!(from.t=='conv'&&t.d==(from.d+2)%4);if(t.t=='smelt')return(it=='cu'||it=='fe')&&t.q.length<5;if(t.t=='asm')return(it=='cub'&&t.cu<4)||(it=='feb'&&t.fe<4);return t.t=='core'}
+function push(b,it){const t=g[b.y+D[b.d][1]]?.[b.x+D[b.d][0]];if(!t||!acc(t,it,b))return false;
+ if(t.t=='conv'){t.item=it;t.just=true}else if(t.t=='smelt')t.q.push(it);else if(t.t=='asm'){if(it=='cub')t.cu++;else t.fe++}else{const v=IT[it][2];money+=v;sold+=v}return true}
+setInterval(()=>{list.forEach(b=>b.just=false);
+ for(const b of list){
+  if(b.t.startsWith('miner')){if(++b.c>=4){if(push(b,b.t=='minerc'?'cu':'fe'))b.c=0;else b.c=4}}
+  else if(b.t=='smelt'){if(b.q.length&&!b.out&&++b.p>=5){b.out=b.q.shift()+'b';b.p=0}if(b.out&&push(b,b.out))b.out=null}
+  else if(b.t=='asm'){if(b.cu>0&&b.fe>0&&!b.out&&++b.p>=6){b.cu--;b.fe--;b.out='sheet';b.p=0}if(b.out&&push(b,b.out))b.out=null}
+  else if(b.t=='conv'&&b.item&&!b.just){if(push(b,b.item))b.item=null}}
+ document.getElementById('m').textContent=money;document.getElementById('s').textContent=sold},300);
+const ray=new THREE.Raycaster(),pl=new THREE.Plane(new THREE.Vector3(0,1,0),0),pt=new THREE.Vector3();
+function pick(e){const r=ren.domElement.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height*2-1)),cam);
+ if(!ray.ray.intersectPlane(pl,pt))return null;const i=Math.floor(pt.x),j=Math.floor(pt.z);return i<0||j<0||i>=W||j>=H?null:[i,j]}
+function act(e,btn){const t=pick(e);if(!t)return;const [i,j]=t,o=g[j][i];if(Math.hypot(i+.5-px,j+.5-pz)>7){say('Muito longe! Chegue mais perto (alcance de 7 blocos).');return}
+ if(btn==2||tool=='erase'){if(o){money+=Math.floor(B[o.t].c/2);scene.remove(o.m);list=list.filter(q=>q!==o);g[j][i]=null}return}
+ if(o){if(o.t==tool&&tool!='core'){o.d=dir;o.m.rotation.y=-dir*Math.PI/2}else say('Esse espaço já está ocupado. Use Apagar (5) para remover.');return}
+ const c=B[tool].c;if(money<c){say('Dinheiro insuficiente: '+B[tool].n+' custa $'+c);return}
+ const need=tool=='minerc'?'cu':tool=='minerf'?'fe':null;if(need&&ore[j][i]!==need){say(need=='cu'?'Esta mineradora só funciona no minério de cobre (mancha marrom).':'Esta mineradora só funciona no minério de ferro (mancha azul-acinzentada).');return}
+ if(tool!='conv'&&Math.floor(px)==i&&Math.floor(pz)==j){say('Saia deste bloco antes de construir aqui.');return}say('');money-=c;add(tool,i,j,dir)}
+let down=false,hov=null,ghost=null,gk='';
+const hl=new THREE.Mesh(new THREE.PlaneGeometry(.98,.98),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.35}));hl.rotation.x=-Math.PI/2;hl.position.y=.13;hl.visible=false;scene.add(hl);
+const cv=ren.domElement;
+cv.addEventListener('pointerdown',e=>{down=true;act(e,e.button)});
+cv.addEventListener('pointermove',e=>{hov=pick(e);if(down&&e.buttons!=2)act(e,0)});
+cv.addEventListener('pointerleave',()=>hov=null);
+addEventListener('pointerup',()=>down=false);
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+let lt=performance.now()/1000;
+function solid(x,z){const i=Math.floor(x),j=Math.floor(z);if(i<0||j<0||i>=W||j>=H)return true;const b=g[j][i];return !!b&&b.t!='conv'}
+function loop(){const t=performance.now()/1000,dt=Math.min(.05,t-lt);lt=t;
+ const ix=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),iy=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0);
+ if(ix||iy){const l=Math.hypot(ix,iy),mx=(Math.cos(az)*ix-Math.sin(az)*iy)/l*4*dt,mz=(-Math.sin(az)*ix-Math.cos(az)*iy)/l*4*dt;
+  if(!solid(px+mx+Math.sign(mx)*.2,pz))px+=mx;if(!solid(px,pz+mz+Math.sign(mz)*.2))pz+=mz;pg.rotation.y=Math.atan2(mx,mz);pg.position.y=Math.abs(Math.sin(t*12))*.06}else pg.position.y=0;
+ pg.position.x=px;pg.position.z=pz;fx+=(px-fx)*Math.min(1,dt*5);fz+=(pz-fz)*Math.min(1,dt*5);
+ cam.position.set(fx+dist*.8*Math.sin(az),dist*.6,fz+dist*.8*Math.cos(az));cam.lookAt(fx,0,fz);
+ for(const b of list){
+  if(b.st){b.st.forEach((s,k)=>s.position.x=(((t*.9+k/3)%1)-.5)*.9);b.im.visible=!!b.item;if(b.item){const I=IT[b.item];b.im.material=I[0];b.im.scale.set(...I[1]);b.im.position.y=.17+.15*I[1][1]}}
+  if(b.dr)b.dr.rotation.y=t*6;
+  if(b.gl){const on=b.q.length>0||!!b.out;b.gl.material.color.setHex(on?0xffb340:0x3a2a20);b.gl.material.emissive.setHex(on?0xff7a00:0)}
+  if(b.coin)b.coin.rotation.y=t*2;
+  if(b.pr){const w=(b.cu>0&&b.fe>0)||b.p>0;b.pr.position.y=.75-(w?Math.abs(Math.sin(t*8))*.12:0);b.l1.material.color.setHex(b.cu?0xd2793a:0x333333);b.l2.material.color.setHex(b.fe?0xc9d0d6:0x333333)}}
+ hl.visible=!!hov;
+ if(hov){const [i,j]=hov,o=g[j][i];hl.position.set(i+.5,.13,j+.5);
+  const ok=Math.hypot(i+.5-px,j+.5-pz)<=7&&(tool=='erase'||(!o&&(tool!='minerc'||ore[j][i]=='cu')&&(tool!='minerf'||ore[j][i]=='fe')));hl.material.color.setHex(ok?0xffffff:0xff4d4d);
+  const k=tool+dir+hov;if(k!=gk){gk=k;if(ghost)scene.remove(ghost);ghost=null;
+   if(tool!='erase'&&!o){const f={t:tool,x:i,y:j,d:dir};ghost=make(f);ghost.traverse(m=>{if(m.material){m.material=m.material.clone();m.material.transparent=true;m.material.opacity=.5}});ghost.children.forEach(c=>c.castShadow=false);scene.add(ghost)}}}
+ else if(ghost){scene.remove(ghost);ghost=null;gk=''}
+ ren.render(scene,cam);requestAnimationFrame(loop)}
+loop();
+}
+</script>
+</body>
+</html>
